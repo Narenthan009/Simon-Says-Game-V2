@@ -1,0 +1,514 @@
+/*
+  ARDUINO SIMON SAYS GAME
+  
+  This is the Simon Game built on the Arduino UNO board.
+  
+  It uses the following Hardware;
+  4 - LEDs for Visual Feedback 
+  4 - Pushbuttons for Input of step
+  1 - Piezo Speaker for Audio Feedback 
+  1 - 16x2 LCD for Game Info and Scoring.
+  1 - Arduino UNO Board
+  1 - 10k ohm Potentiometer
+  1 - 4.7k ohm Resistor
+  13 - 1k ohm Resistors
+  4 - 560 ohm Resistors
+  1 - 220 ohm Resistors
+  1 - 7 Segment Display
+  1 - TMP36
+  
+ 
+//MASTER CODE 
+ 
+*/
+
+#include <LiquidCrystal.h>
+
+//initialise the library with the numbers of the interface pins
+LiquidCrystal lcd(12,11,10,9,8,7);
+
+int userInput = 0;      //Analog pin for user input from buttons
+int led1 = 2;           //LED 1
+int led2 = 3;           //LED 2
+int led3 = 4;           //LED 3
+int led4 = 5;           //LED 4
+int speaker = 6;        //Speaker should be connected to a PWM pin (like -6) for analog output
+int Tempvalue=0;
+float temp;
+
+//Game Stats
+boolean started = false;    //Has the game started yet
+boolean gameover = false;   //Has the game ended
+int level = 0;              //What level is the user on (Score at end = level -1)
+
+int gameMode = 0;           //Which game mode is being used
+                            // 1 = Progressive
+                            // 2 = Random
+                            
+boolean soundEnabled = true;  //Is the sound enabled or not
+                            
+int lastLevelSeq[50];        //The sequence for the steps used in progressive mode previous level
+                             //Also used by game over to replay correct sequence back
+                             //Nobody can get passed 50, surely!
+
+//Setup Routine
+
+char mystr[5];
+const byte txPin = 1;
+
+void setup()
+{
+  
+//Pin Assignment  
+  
+  pinMode(A1, INPUT);
+  pinMode(led1, OUTPUT);
+  pinMode(led2, OUTPUT);
+  pinMode(led3, OUTPUT);
+  pinMode(led4, OUTPUT);
+  pinMode(speaker, OUTPUT); //Should be in a (PWM-) pin such as -6
+  pinMode(txPin, OUTPUT);
+  Serial.begin(9600); //Initialise serial port at 9600 Baud
+  
+  //Set up the LCD Column and Row count (16 columns and 2 rows)
+  lcd.begin(16,2);
+  delay(100);
+  lcd.clear();
+  lcd.print("Welcome To");
+  lcd.setCursor(0,1);
+  lcd.print("SIMON SAYS GAME");
+  delay(700);
+  for (int i = 0; i < 14; i++)		//for (initialization; condition; increment) {// statement(s);}
+    {
+    lcd.scrollDisplayLeft();
+    delay(50);
+    }
+  lcd.clear();
+  lcd.print("Loading Game...");
+  for (int i = 1; i<7; i++)
+  {
+    if (i<5)
+    {
+      lightLed(i);    //Light each LED once to indicate no malfunction
+    }
+      playTone(i);    //Play each tone used in this program
+      lightLed(0);    //Clear the LED's
+  }
+}
+  
+  void loop()
+ {   
+//Temperature sensor setup
+  
+if(analogRead(A1)> 225) //When temperature > 60 oC 
+     {
+      	analogWrite(3, 179); 			    //RED LED lights up at 70% brightness
+      	analogWrite(5, 179);                //Yellow LED lights up at 70% brightness
+  		lcd.setCursor(0,1);
+  		lcd.print("Overheating!");      
+     }
+    
+else;
+ {   
+    
+  Serial.readBytes(mystr,5); //Reads 5 characters from serial port
+  Serial.println(mystr); //Sends received string to Serial Monitor
+  Serial.println("Received"); //Prints "Received" on Serial Monitor
+   
+  lcd.clear();
+  lcd.print("To Start");
+  lcd.setCursor(0,1);
+  lcd.print("PRESS ANY BUTTON");  
+    while (started == false)
+     if (getButtonPressed() > 0)
+      {
+        playTone(5);
+        started=true;
+      }
+    
+    //Clear the previous game Last Level Steps
+    for (int s=0; s < 50; s++)
+    {
+      lastLevelSeq[s] = 0;
+    }
+    
+     delay(500);
+     
+     // Select Game Mode Here
+     lcd.clear();
+     lcd.print("Select Game Mode");
+     
+     while (gameMode == 0)
+    {
+     lcd.setCursor(0,1);
+     lcd.print("1=P 2=R 4=TGLSND");
+     
+      switch (getButtonPressed())
+      {
+      case 1:	//Progressive Sound Mode if pushbutton 1 is pressed (Most Left)
+        if (soundEnabled)
+        {
+          playTone(5);
+        }
+        gameMode = 1;
+        lcd.clear();
+        lcd.print("Progressive");
+        lcd.setCursor(0,1);
+        lcd.print("Mode Selected");
+        break;
+       
+      case 2:	//Random Sound Mode if pushbutton 2 is pressed (Second Left)
+        if (soundEnabled)
+        {
+          playTone(5);
+        }
+        
+        gameMode = 2;
+        lcd.clear();
+        lcd.print("Random");
+        lcd.setCursor(0,1);
+        lcd.print("Mode Selected");
+        break;
+      
+      case 4:		//Toggle Sound Mode if pushbutton 4 is pressed (Most Right)
+        soundEnabled = (!soundEnabled);		// Test if sound is enabled
+        lcd.setCursor(0,1);
+        
+        if (soundEnabled)
+        {
+          lcd.print("Sound Mode: ON  "); 
+          playTone(5);          
+        }
+        else
+        {
+         lcd.print("Sound Mode: OFF "); 
+        }
+        delay(1000);
+        break;  
+      }
+    }    
+    
+    delay(1000);
+    
+     //Set start level
+     level =1;
+     Serial.write('0');
+ 	 delay(500);
+    
+ 
+     
+    while (gameover == false)      
+    {
+      if (doLevel(level)==true)
+        {
+          //Level Correct, increment Level and repeat
+          lcd.clear();
+          lcd.print("LEVEL: "); lcd.print(level);
+          lcd.setCursor(0,1);
+          lcd.print("Completed......"); 
+          
+          if (soundEnabled)
+          {
+            //play level correct sound
+            for (int i =0; i < 3; i++)
+            {
+              playTone(5);
+              delay(50);
+            }
+          }
+          else
+          {
+            delay(125);
+          }
+          delay(1000);    //Delay so user can see level completed message
+          level++;        //Set next level
+        } 
+       else
+      {
+       //Level Wrong, set Game Over
+       gameover = true;
+      }  
+    }
+    
+	if (gameover == true)
+    {
+      lcd.clear();
+      lcd.print("WRONG! GAME OVER");
+      lcd.setCursor(0,1);
+      lcd.print("SCORE: "); lcd.print(level-1);		// Score is always 1 level below than current level
+      
+      if (soundEnabled)
+      {
+        for (int i = 0; i < 5; i++)
+        {
+          playTone(6);
+          delay(50);
+        }
+      }
+      else
+      {
+        delay(125);
+      }
+    }
+        
+      //Playback the correct sequence
+      lcd.clear();
+      lcd.print("Sequence");
+      lcd.setCursor(0,1);
+      lcd.print("should have been");
+      delay(500);
+      for(int s=0; s < level; s++)
+      {
+        playStep(lastLevelSeq[s]);
+        //lightLed(lastLevelSeq[s]);
+        //playTone(lastLevelSeq[s]);
+        //lightLed(0);
+        //delay(250);
+      }
+      
+      lcd.clear();
+      lcd.print("Your Score: "); lcd.print(level-1);
+      lcd.setCursor(0,1);
+      lcd.print("PRESS ANY BUTTON");
+      
+      //Wait for user to engage
+      while (gameover == true)
+      {
+       if (getButtonPressed() > 0)
+        {
+        level = 0;
+        
+        if (soundEnabled)
+        {
+          playTone(5);
+        }
+        gameover = false;
+        started = false;
+        gameMode = 0;
+        }        
+      }     
+    }
+  }
+  
+   /*
+  Read the analog input and determine which button is pressed ( pin A0 on the Arduino UNO )
+  */  
+  int getButtonPressed()
+  {
+    int userValue = 0;      // What is the pushbutton resistor matrix value
+    userValue = analogRead(userInput);
+    
+    int buttonPressed = 0;
+      
+    if (userValue > 850)
+    {
+      buttonPressed = 0;      //No Button Pressed
+      //Serial.println(userValue);
+    }
+    if (userValue < 850)
+    { 
+      buttonPressed = 4;      // Maybe Button 4 still to check others
+      //Serial.println(userValue);
+    }
+    if (userValue < 800)
+    {
+      buttonPressed = 3;      // Maybe Button 3 still to check others
+      //Serial.println(userValue);
+    }
+    if (userValue < 700)
+    {
+      buttonPressed = 2;      // Maybe Button 2 still to check last one
+      //Serial.println(userValue);
+    }
+    if (userValue < 600)
+    {
+      buttonPressed = 1;      // Done Checking pushbuttons
+      //Serial.println(userValue);
+    }
+    return buttonPressed;  
+  }
+
+  
+  /*
+  This will light the led, play the tone, switch off the led 
+  */
+  void playStep(int number)
+  {
+    lightLed(number);
+    if (soundEnabled)
+    {
+      playTone(number);
+    }
+    else
+    {
+      delay(100);
+    }
+    delay(250);
+    lightLed(0);
+  }
+  
+  
+  /*
+  Light the Relevant LED
+  parameters led = which LED to light
+  */
+  void lightLed(int led)
+  {
+    switch (led)
+    {
+    case 0:
+      digitalWrite(led1,LOW);          //Set all the LED's off
+      digitalWrite(led2,LOW);
+      digitalWrite(led3,LOW);
+      digitalWrite(led4,LOW);
+      delay(50);                      //Give time for the LED's to go
+      break;
+    case 1:
+      digitalWrite(led1,HIGH);        //LED 1 on
+      break;
+    case 2:
+      digitalWrite(led2,HIGH);        //LED 2 on
+      break;
+    case 3:
+      digitalWrite(led3,HIGH);        //LED 3 on
+      break;
+    case 4:
+      digitalWrite(led4,HIGH);        //LED 4 on
+      break;
+    }
+  }
+ 
+  /*
+  Play the tones for the game
+  param tone = which tone to play
+  tone 1 to 4 are the button tones
+  tone 5 is level correct tone / start tone (any button pressed)
+  tone 6 is level wrong and game over tone
+  Pulse Width Modulation(PWM) is a technique for getting analog results with digital means.
+  */
+  void playTone(int tone)
+  {
+    int tones[6] = { 1000, 1250, 1500, 1750, 500, 3000}; //tone = {1,2,3,4,5,6}
+      for (long i = 0; i < 125; i++)	//analogWrite(127) is a 50% duty cycle (on half the time)
+      {
+        //Generates a square wave signal that switches between on and off
+        digitalWrite(speaker, HIGH);
+        delayMicroseconds(tones[tone-1]);
+        digitalWrite(speaker, LOW);
+        delayMicroseconds(tones[tone-1]);
+      }
+  }
+
+/* 
+This is the actual game level.
+Return TRUE if success or FALSE if fail
+*/
+boolean doLevel(int level)
+{
+  int steps[level];                //Which steps the user must match
+  int userStep = 0;                //Which button has the user pressed
+  int userLength =0;               //How many steps has the user entered
+  boolean levelPass = false;       //Level was won or lost  
+  boolean inProgress = true;       //Level currently running
+    
+  //Display a message to the user that the Arduino UNO is doing its bit
+  lcd.clear();
+  lcd.print("Arduino Turn");
+  lcd.setCursor(0,1);
+  lcd.print("Pay Attention");
+  delay(1000);                    //Add 1s delay
+  
+  //Seed the random number generator
+  randomSeed(analogRead(0) + analogRead(1) + analogRead(2)+ analogRead(3)+analogRead(4)+analogRead(5));
+  
+  //The steps to be played are dependent on Game Mode
+  //Setup the steps based on which mode we are playing
+  
+  if (gameMode == 1)
+  {
+     //Progressive 
+     //Get last level
+     for (int s=0; s < level; s++)
+     {
+       if (level > 1)
+       {
+         // Can only copy if higher than level 1
+         steps[s] = lastLevelSeq[s];
+       }
+       //Add new step
+       steps[level-1] = (int)random(1,5);
+     }
+  }
+  if (gameMode == 2)
+  {
+     //Random
+    for (int s=0; s < level; s++)
+    {
+      steps[s] = (int)random(1,5);
+    }
+  }
+  
+     //Copy back to last level for next time and Game Over
+     for (int s=0; s < level; s++)
+     {
+       lastLevelSeq[s] = steps[s];
+     }
+  
+  //Play the steps
+  for (int s=0; s < level; s++)
+  {
+    playStep(steps[s]);
+    //lightLed(steps[s]);        //Light the led for the step from the sequence
+    //playTone(steps[s]);        //Play the step tone from the sequence
+    //lightLed(0);               //Turn off the LEDs
+  }
+  
+  //Display user's turn to play message
+  lcd.clear();
+  lcd.print("LEVEL: "); lcd.print(level);
+  lcd.setCursor(0,1);
+  lcd.print("Your Turn.....");
+  
+//Timer Countdown..........................................   
+      for (int i=0; i<8; i++){
+      delay(1000);
+      byte outgoingByte = i;
+      Serial.write(outgoingByte);
+      }
+//........................................................    
+
+  
+  while (inProgress)
+  {
+    //Get the user's input  
+   userStep = getButtonPressed();
+   if (userStep >0)
+   {
+     userLength++;
+     playStep(userStep);
+     
+     //lightLed(userStep);
+     //playTone(userStep);
+     //lightLed(0);
+   
+     //Check the user's input against the sequence
+     if (steps[userLength-1] == userStep)
+     {
+       //Correct pushbutton pressed, check if sequence still to complete
+       if (userLength ==level)
+       {
+         //finish the sequence
+         inProgress = false;
+         levelPass = true;
+       }
+     }
+     else
+     {
+       //wrong button pressed
+       inProgress = false;
+       levelPass = false;
+     }
+    }
+  }
+  return levelPass;
+}

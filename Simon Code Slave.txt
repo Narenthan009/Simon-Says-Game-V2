@@ -1,0 +1,51 @@
+//SLAVE CODE
+
+const byte rxPin = 0;  // RX pin
+byte storedValue = 255;
+int displayMap[8][8] = {
+ //e,d,c,.,b,a,f,g
+  {0,0,1,0,1,1,0,0}, // 7
+  {1,1,1,0,0,1,1,1}, // 6
+  {0,1,1,0,0,1,1,1}, // 5
+  {0,0,1,0,1,0,1,1}, // 4
+  {0,1,1,0,1,1,0,1}, // 3
+  {1,1,0,0,1,1,0,1}, // 2
+  {0,0,1,0,1,0,0,0}, // 1
+  {1,1,1,0,1,1,1,0}, // 0 
+};
+
+int displayPins[8] = {7,6,5,4,3,2,9,8}; //e,d,c,dp,b,a,f,g
+
+void setup() {
+  for (int i = 0; i<8; i++){
+    pinMode(displayPins[i], OUTPUT);
+  }
+  pinMode(rxPin, INPUT); 
+  Serial.begin(9600);
+}
+
+void loop() {
+  if (Serial.available()) {
+    byte valueReceived = Serial.read();
+    if(storedValue != valueReceived){
+      storedValue = valueReceived;
+      resetDisplay();
+      displayNum(storedValue);
+      Serial.println(storedValue);
+    }
+  }
+}
+
+void displayNum(int numToDisplay){
+  for(int i=0; i<8; i++){
+    if(displayMap[numToDisplay][i] == 1){
+      digitalWrite(displayPins[i], HIGH);
+    }
+  }
+}
+
+void resetDisplay(){
+  for(int i=0; i<8; i++){
+      digitalWrite(displayPins[i], LOW);
+  }
+}
